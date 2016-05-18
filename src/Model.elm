@@ -1,7 +1,7 @@
 module Model exposing
   ( Model
   , Msg (..)
-  , Silo
+  , Base
   , City
   , Missile
   , Explosion
@@ -22,7 +22,7 @@ type Msg
   = Tick Float
   | AddMissile (Int, Int)
   | NextCountdown Int
-  | LaunchIncoming (Int, Int)
+  | LaunchNuke (Int, Int)
   | NextLevel
   | KeyPress Int
 
@@ -42,7 +42,7 @@ subscriptions model =
     LevelIntro -> Keyboard.presses KeyPress
     _ -> Sub.none
 
-type alias Silo =
+type alias Base =
   { id : Int
   , position : Vec2
   , numMissiles : Int
@@ -58,7 +58,6 @@ type alias Missile =
   , launch : Vec2
   , velocity : Vec2
   , colour : String
-  , kind : MissileType
   }
 
 type alias Explosion =
@@ -69,16 +68,18 @@ type alias Explosion =
 
 type alias Model =
   { missiles : List Missile
+  , nukes : List Missile
   , explosions : List Explosion
-  , silos : List Silo
+  , bases : List Base
   , cities : List City
-  , incomingLeft : Int
+  , nukesLeft : Int
   , countdown : Int
   , level : Int
   , state : GameState
+  , score : Int
   }
 
-siloPositions =
+basePositions =
   [ 1
   , 5
   , 9
@@ -112,14 +113,14 @@ targetFromIndex i =
     9 -> makePoint 760 330
     _ -> targetFromIndex' i
 
-defaultSilos : List Silo
-defaultSilos =
+defaultBases : List Base
+defaultBases =
   let
-    pos = positions siloPositions
-    pairs = List.map2 (,) pos siloPositions
-    silos = List.map (\(p, id) -> {id = id, position = p, numMissiles = 10}) pairs
+    pos = positions basePositions
+    pairs = List.map2 (,) pos basePositions
+    bases = List.map (\(p, id) -> {id = id, position = p, numMissiles = 10}) pairs
   in
-    silos
+    bases
 
 defaultCities : List City
 defaultCities =
@@ -131,13 +132,15 @@ defaultCities =
 
 defaultModel =
   { missiles = []
+  , nukes = []
   , explosions = []
-  , silos = defaultSilos
+  , bases = defaultBases
   , cities = defaultCities
-  , incomingLeft = 10
+  , nukesLeft = 10
   , countdown = 0
   , level = 0
   , state = LevelIntro
+  , score = 0
   }
 
 init : (Model, Cmd Msg)
@@ -153,8 +156,8 @@ update msg model =
       (addMissile (makePoint x y) model, Cmd.none)
     NextCountdown c ->
       (updateCountdown c model, Cmd.none)
-    LaunchIncoming (x, target) ->
-      launch x target model
+    LaunchNuke (from, target) ->
+      launchNuke from target model
     NextLevel ->
       (nextLevel model, Cmd.none)
     KeyPress key ->
@@ -172,15 +175,16 @@ nextLevel model =
   in
     { model
       | level = level'
-      , incomingLeft = incomingForLevel level'
+      , nukesLeft = nukesForLevel level'
       , countdown = 0
-      , silos = defaultSilos
+      , bases = defaultBases
       , missiles = []
+      , nukes = []
       , explosions = []
       , state = Playing
     }
 
-incomingForLevel level =
+nukesForLevel level =
   9 + level
 
 toState : GameState -> Model -> Model
@@ -194,67 +198,168 @@ updateCountdown c model =
     | countdown = c
   }
 
-launch x target model =
-  case model.incomingLeft of
+launchNuke : Int -> Int -> Model -> (Model, Cmd Msg)
+launchNuke from target model =
+  case model.nukesLeft of
     0 ->
       (model, Cmd.none)
     _ ->
-      (launchIncoming x target model, Random.generate NextCountdown (Random.int 10 100))
+      (launchNukeFrom (makePoint from 0) target model, countdownCommand)
 
-launchIncoming x target model =
+speedForNuke : Model -> Float
+speedForNuke model =
+  0.4 + (0.05 * toFloat (model.level - 1))
+
+launchNukeFrom : Vec2 -> Int -> Model -> Model
+launchNukeFrom launch target model =
   let
-    launch = makePoint x 0
     targetPos = targetFromIndex target
-    newMissiles = makeIncomingMissile launch targetPos :: model.missiles
-    incomingLeft' = model.incomingLeft - 1
+    speed = speedForNuke model
+    newNukes = makeNuke speed launch targetPos :: model.nukes
+    nukesLeft' = model.nukesLeft - 1
   in
     { model
-      | missiles = newMissiles
-      , incomingLeft = incomingLeft'
+      | nukes = newNukes
+      , nukesLeft = nukesLeft'
     }
+
+gameOver : Model -> Bool
+gameOver model =
+  List.length model.cities == 0 &&
+  List.length model.explosions == 0
 
 levelOver : Model -> Bool
 levelOver model =
-  numEnemyMissiles model == 0 &&
-  model.incomingLeft == 0 &&
-  List.length model.explosions == 0
-
-numEnemyMissiles model =
-  List.filter (\m -> m.kind == Enemy) model.missiles |> List.length
+  List.length model.nukes == 0 &&
+  List.length model.explosions == 0 &&
+  model.nukesLeft == 0
 
 updateModel model =
   (nextStep model, nextCommand model)
 
+launchNukeCommand : Cmd Msg
+launchNukeCommand =
+  Random.generate LaunchNuke (Random.pair (Random.int 0 800) (Random.int 1 9))
+
+countdownCommand : Cmd Msg
+countdownCommand =
+  Random.generate NextCountdown (Random.int 10 100)
+
 nextCommand model =
   case model.countdown of
-    0 -> Random.generate LaunchIncoming (Random.pair (Random.int 0 800) (Random.int 1 9))
+    0 -> launchNukeCommand
     _ -> Cmd.none
 
 nextStep : Model -> Model
 nextStep model =
-  if levelOver model then
-    toState LevelIntro model
+  if gameOver model then
+    toState GameOver model
   else
-    step model
+    if levelOver model then
+      toState LevelIntro model
+    else
+      stepModel model
 
-step : Model -> Model
-step model =
+stepModel : Model -> Model
+stepModel model =
+  model
+    |> updateExplosions
+    |> moveMissiles
+    |> destroyNukes
+    |> detonateAllMissiles
+    |> destroyCities
+    |> destroyBases
+    |> countdown
+
+updateExplosions : Model -> Model
+updateExplosions model =
   let
-    (newExplosions, newMissiles) = explodeMissiles model
-    updatedExplosions = List.map growExplosion model.explosions |> List.filter notDone
-    newExplosions' = List.append newExplosions updatedExplosions
-    newMissiles' = newMissiles |> List.map moveMissile
-    newCities = List.filter (cityHit model.explosions) model.cities
-    newSilos = List.map (siloHit model.explosions) model.silos
-    newCountdown = model.countdown - 1
+    explosions' = List.map growExplosion model.explosions |> List.filter notDone
   in
     { model
-      | missiles = newMissiles'
-      , explosions = newExplosions'
-      , countdown = newCountdown
-      , cities = newCities
-      , silos = newSilos
+      | explosions = explosions'
     }
+
+scorePerNuke =
+  25
+
+destroyNukes : Model -> Model
+destroyNukes model =
+  let
+    (explosions, nukes') = explodeNukes model
+    scoreInc = (List.length explosions) * scorePerNuke
+    score' = model.score + scoreInc
+    explosions' = model.explosions ++ explosions
+  in
+    { model
+      | explosions = explosions'
+      , nukes = nukes'
+      , score = score'
+    }
+
+detonateAllMissiles : Model -> Model
+detonateAllMissiles model =
+  let
+    (nukeExplosions, nukes') = detonateMissiles model.nukes
+    (missileExplosions, missiles') = detonateMissiles model.missiles
+    explosions' = model.explosions ++ nukeExplosions ++ missileExplosions
+  in
+    { model
+      | explosions = explosions'
+      , nukes = nukes'
+      , missiles = missiles'
+    }
+
+moveMissiles : Model -> Model
+moveMissiles model =
+  let
+    missiles' = List.map moveMissile model.missiles
+    nukes' = List.map moveMissile model.nukes
+  in
+    { model
+      | missiles = missiles'
+      , nukes = nukes'
+    }
+
+destroyCities : Model -> Model
+destroyCities model =
+  let
+    cities' = List.filter (cityHit model.explosions) model.cities
+  in
+    { model
+      | cities = cities'
+    }
+
+destroyBases : Model -> Model
+destroyBases model =
+  let
+    bases' = List.map (baseHit model.explosions) model.bases
+  in
+    { model
+      | bases = bases'
+    }
+
+countdown : Model -> Model
+countdown model =
+  { model
+    | countdown = model.countdown - 1
+  }
+
+explodeNukes : Model -> (List Explosion, List Missile)
+explodeNukes model =
+  let
+    (toExplode, toKeep) = List.partition (missileHit model.explosions) model.nukes
+    explosions = List.map createExplosion toExplode
+  in
+    (explosions, toKeep)
+
+detonateMissiles : List Missile -> (List Explosion, List Missile)
+detonateMissiles missiles =
+  let
+    (toDetonate, toKeep) = List.partition detonateMissile missiles
+    explosions = List.map createExplosion toDetonate
+  in
+    (explosions, toKeep)
 
 cityHit : List Explosion -> City -> Bool
 cityHit explosions city =
@@ -263,26 +368,24 @@ cityHit explosions city =
   in
     List.all (\hit -> not hit) hits
 
-siloHit : List Explosion -> Silo -> Silo
-siloHit explosions silo =
+missileHit : List Explosion -> Missile -> Bool
+missileHit explosions missile =
   let
-    hits = List.map (cloudHit silo.position) explosions
+    hits = List.map (cloudHit missile.position) explosions
+  in
+    List.any (\b -> b) hits
+
+baseHit : List Explosion -> Base -> Base
+baseHit explosions base =
+  let
+    hits = List.map (cloudHit base.position) explosions
   in
     if (List.any (\hit -> hit) hits) then
-      { silo
+      { base
         | numMissiles = 0
       }
     else
-      silo
-
-explodeMissiles : Model -> (List Explosion, List Missile)
-explodeMissiles model =
-  let
-    (detonate, keep) = List.partition detonateMissile model.missiles
-    (explode, keep') = List.partition (explodeMissile model) keep
-    explosions = List.map createExplosion (List.append detonate explode)
-  in
-    (explosions, keep')
+      base
 
 createExplosion : Missile -> Explosion
 createExplosion missile =
@@ -315,14 +418,14 @@ notDone exp =
 addMissile : Vec2 -> Model -> Model
 addMissile point model =
   let
-    silo = nearestSilo point model
-    missile = makeSiloMissile silo point
+    base = nearestBase point model
+    missile = makeBaseMissile base point
     newMissiles = maybeAddMissile missile model.missiles
-    newSilos = maybeRemoveMissile silo model.silos
+    newBases = maybeRemoveMissile base model.bases
   in
     { model
       | missiles = newMissiles
-      , silos = newSilos
+      , bases = newBases
     }
 
 maybeAddMissile : Maybe Missile -> List Missile -> List Missile
@@ -333,22 +436,22 @@ maybeAddMissile missile list =
     Nothing ->
       list
 
-maybeRemoveMissile : Maybe Silo -> List Silo -> List Silo
-maybeRemoveMissile silo silos =
-  case silo of
+maybeRemoveMissile : Maybe Base -> List Base -> List Base
+maybeRemoveMissile base bases =
+  case base of
     Just s ->
-      List.map (removeMissile s.id) silos
+      List.map (removeMissile s.id) bases
     Nothing ->
-      silos
+      bases
 
-removeMissile : Int -> Silo -> Silo
-removeMissile id silo =
-  if silo.id == id then
-    { silo
-      | numMissiles = silo.numMissiles - 1
+removeMissile : Int -> Base -> Base
+removeMissile id base =
+  if base.id == id then
+    { base
+      | numMissiles = base.numMissiles - 1
     }
   else
-    silo
+    base
 
 makePoint : Int -> Int -> Vec2
 makePoint x y =
@@ -356,29 +459,29 @@ makePoint x y =
   , y = toFloat y
   }
 
-nearestSilo : Vec2 -> Model -> Maybe Silo
-nearestSilo point model =
+nearestBase : Vec2 -> Model -> Maybe Base
+nearestBase point model =
   let
-    nonEmptySilos = List.filter (\s -> s.numMissiles > 0) model.silos
-    silos = List.sortBy (distanceTo point) nonEmptySilos
+    nonEmptyBases = List.filter (\s -> s.numMissiles > 0) model.bases
+    bases = List.sortBy (distanceTo point) nonEmptyBases
   in
-    List.head silos
+    List.head bases
 
-distanceTo : Vec2 -> Silo -> Float
-distanceTo point silo =
-  Vec2.distance point silo.position
+distanceTo : Vec2 -> Base -> Float
+distanceTo point base =
+  Vec2.distance point base.position
 
-makeSiloMissile : Maybe Silo -> Vec2 -> Maybe Missile
-makeSiloMissile silo target =
-  case silo of
+makeBaseMissile : Maybe Base -> Vec2 -> Maybe Missile
+makeBaseMissile base target =
+  case base of
     Just s ->
       Just (makeMissile Player 8.0 s.position target)
     Nothing ->
       Nothing
 
-makeIncomingMissile : Vec2 -> Vec2 -> Missile
-makeIncomingMissile =
-  makeMissile Enemy 0.5
+makeNuke : Float -> Vec2 -> Vec2 -> Missile
+makeNuke =
+  makeMissile Enemy
 
 makeMissile : MissileType -> Float -> Vec2 -> Vec2 -> Missile
 makeMissile kind speed start target =
@@ -392,7 +495,6 @@ makeMissile kind speed start target =
     , position = start
     , velocity = v
     , colour = colour
-    , kind = kind
     }
 
 missileColour : MissileType -> String
@@ -410,20 +512,12 @@ moveMissile missile =
       | position = newPosition
     }
 
-
 detonateMissile : Missile -> Bool
 detonateMissile missile =
   let
     distToTarget = Vec2.distance missile.position missile.target
   in
     distToTarget < 4.0
-
-explodeMissile : Model -> Missile -> Bool
-explodeMissile model missile =
-  let
-    hits = List.map (cloudHit missile.position) model.explosions
-  in
-    List.any (\b -> b) hits
 
 cloudHit : Vec2 -> Explosion -> Bool
 cloudHit point exp =

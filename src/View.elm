@@ -8,7 +8,7 @@ import Svg.Attributes exposing (..)
 import Svg.Events exposing (..)
 import String
 
-import Model exposing (Model, Msg, GameState, Silo, City, Missile, Explosion)
+import Model exposing (Model, Msg, GameState, Base, City, Missile, Explosion)
 
 view : Model -> Html Msg
 view model =
@@ -91,19 +91,21 @@ viewGame model =
         []
     svgElements =
       List.concat
-            [ [svgBackground, viewGround]
-            , List.map renderSilo model.silos
+            [ [svgBackground, viewGround ]
+            , List.map renderBase model.bases
             , List.map viewCity model.cities
             , List.map viewMissile model.missiles
+            , List.map viewMissile model.nukes
             , List.map viewExplosion model.explosions
             , viewState model
+            , viewScore model
             ]
   in
     Svg.svg [ class "game-svg", viewBox "0 0 800 400" ] svgElements
 
-siloColour : Silo -> String
-siloColour silo =
-  case silo.numMissiles of
+baseColour : Base -> String
+baseColour base =
+  case base.numMissiles of
     0 -> "grey"
     _ -> "blue"
 
@@ -115,13 +117,13 @@ viewGround =
        ]
        []
 
-viewSilo : Silo -> Svg Msg
-viewSilo silo =
+viewBase : Base -> Svg Msg
+viewBase base =
   Svg.circle
-       [ cx (toString silo.position.x)
-       , cy (toString silo.position.y)
+       [ cx (toString base.position.x)
+       , cy (toString base.position.y)
        , r "10"
-       , fill (siloColour silo)
+       , fill (baseColour base)
        ]
        []
 
@@ -159,35 +161,35 @@ renderMissile (x, y) =
          ]
          []
 
-renderSilo : Silo -> Svg Msg
-renderSilo silo =
+renderBase : Base -> Svg Msg
+renderBase base =
   let
-    locations = List.take silo.numMissiles missileStorageLocations |> translatePoints silo.position.x silo.position.y
-    caption = siloCaption silo
+    locations = List.take base.numMissiles missileStorageLocations |> translatePoints base.position.x base.position.y
+    caption = baseCaption base
   in
     Svg.g
          []
          ((List.map (renderMissile) locations) ++ caption)
 
-siloCaptionText silo =
-  if silo.numMissiles == 0 then
+baseCaptionText base =
+  if base.numMissiles == 0 then
     Just "OUT"
   else
-    if silo.numMissiles <= 3 then
+    if base.numMissiles <= 3 then
       Just "LOW"
     else
       Nothing
 
-siloCaption : Silo -> List (Svg Msg)
-siloCaption silo =
+baseCaption : Base -> List (Svg Msg)
+baseCaption base =
   let
-    text = siloCaptionText silo
+    text = baseCaptionText base
   in
     case text of
       Just t ->
         [Svg.text'
-           [ x (toString silo.position.x)
-           , y (toString (silo.position.y + 50))
+           [ x (toString base.position.x)
+           , y (toString (base.position.y + 50))
            , textAnchor "middle"
            , fill "blue"
            ]
@@ -212,6 +214,7 @@ viewState model =
   case model.state of
     Model.Intro -> viewIntro
     Model.LevelIntro -> viewStartLevel model
+    Model.GameOver -> viewGameOver model
     _ -> []
 
 
@@ -241,20 +244,39 @@ viewStartLevel model =
   [ levelCaption model ]
 
 levelCaption model =
-  let
-    caption = "Press Enter to Start"
-  in
-    Svg.text'
-         [ x "400"
-         , y "200"
-         , fill "blue"
-         , textAnchor "middle"
-         ]
-         [ Svg.text caption ]
+  centeredText "PRESS ENTER TO START"
 
 viewEndLevel : Model -> List (Svg Msg)
 viewEndLevel model =
   [ levelCaption model ]
+
+viewScore : Model -> List (Svg Msg)
+viewScore model =
+  [ renderScore model ]
+
+renderScore : Model -> Svg Msg
+renderScore model =
+  Svg.text'
+       [ x "400"
+       , y "20"
+       , textAnchor "middle"
+       , fill "blue"
+       ]
+       [ Svg.text (toString model.score) ]
+
+
+viewGameOver model =
+  [ centeredText "GAME OVER" ]
+
+centeredText caption =
+  Svg.text'
+       [ x "400"
+       , y "200"
+       , fill "blue"
+       , textAnchor "middle"
+       ]
+       [ Svg.text caption ]
+
 
 getClickPos : Json.Decoder (Int, Int)
 getClickPos =
