@@ -129,8 +129,12 @@ viewBase base =
 
 viewCity : City -> Svg Msg
 viewCity city =
+  renderCity city.position.x city.position.y
+
+renderCity : Float -> Float -> Svg Msg
+renderCity x y =
   let
-    p = cityAtPosition city.position.x city.position.y
+    p = cityAtPosition x y
   in
     Svg.polygon
          [ points p
@@ -214,6 +218,7 @@ viewState model =
   case model.state of
     Model.Intro -> viewIntro
     Model.LevelIntro -> viewStartLevel model
+    Model.LevelEnd -> viewEndLevel model
     Model.GameOver -> viewGameOver model
     _ -> []
 
@@ -246,10 +251,6 @@ viewStartLevel model =
 levelCaption model =
   centeredText "PRESS ENTER TO START"
 
-viewEndLevel : Model -> List (Svg Msg)
-viewEndLevel model =
-  [ levelCaption model ]
-
 viewScore : Model -> List (Svg Msg)
 viewScore model =
   [ renderScore model ]
@@ -264,6 +265,36 @@ renderScore model =
        ]
        [ Svg.text (toString model.score) ]
 
+viewEndLevel : Model -> List (Svg Msg)
+viewEndLevel model =
+  List.concat [ viewScoredCities model
+              , viewScoredMissiles model
+              ]
+
+
+viewScoredCities : Model -> List (Svg Msg)
+viewScoredCities model =
+  List.indexedMap scoreCity model.citiesScored
+
+viewScoredMissiles : Model -> List (Svg Msg)
+viewScoredMissiles model =
+  List.indexedMap scoreMissile (List.repeat model.missilesScored 1)
+
+scoreMissile : Int -> Int -> Svg Msg
+scoreMissile pos _ =
+  let
+    x = 300 + (pos * 10)
+    y = 100
+  in
+    renderMissile (x, y)
+
+scoreCity : Int -> City -> Svg Msg
+scoreCity pos city =
+  let
+    x = 300 + (pos * 50)
+    y = 200
+  in
+    renderCity x y
 
 viewGameOver model =
   [ centeredText "GAME OVER" ]

@@ -17,9 +17,11 @@ import Ease
 import Random
 import String
 import Keyboard
+import Time exposing (Time)
 
 type Msg
-  = Tick Float
+  = Tick Time
+  | Frame Float
   | AddMissile (Int, Int)
   | NextCountdown Int
   | LaunchNuke (Int, Int)
@@ -34,13 +36,20 @@ type GameState
   = Intro
   | LevelIntro
   | Playing
+  | LevelEnd
   | GameOver
 
 subscriptions model =
   case model.state of
-    Playing -> AnimationFrame.diffs Tick
+    Playing -> AnimationFrame.diffs Frame
     LevelIntro -> Keyboard.presses KeyPress
+    LevelEnd -> Time.every (scoringInterval model) Tick
     _ -> Sub.none
+
+scoringInterval model =
+  case numMissilesLeft model of
+    0 -> 500 * Time.millisecond
+    _ -> 100 * Time.millisecond
 
 type alias Base =
   { id : Int
@@ -77,6 +86,8 @@ type alias Model =
   , level : Int
   , state : GameState
   , score : Int
+  , citiesScored : List City
+  , missilesScored : Int
   }
 
 basePositions =
@@ -135,12 +146,14 @@ defaultModel =
   , nukes = []
   , explosions = []
   , bases = defaultBases
-  , cities = defaultCities
+  , cities = []
   , nukesLeft = 10
   , countdown = 0
   , level = 0
   , state = LevelIntro
   , score = 0
+  , citiesScored = List.reverse defaultCities
+  , missilesScored = 0
   }
 
 init : (Model, Cmd Msg)
@@ -151,6 +164,8 @@ update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     Tick _ ->
+      (updateScoring model, Cmd.none)
+    Frame _ ->
       updateModel model
     AddMissile (x, y) ->
       (addMissile (makePoint x y) model, Cmd.none)
@@ -162,6 +177,51 @@ update msg model =
       (nextLevel model, Cmd.none)
     KeyPress key ->
       (keyPress key model, Cmd.none)
+
+updateScoring : Model -> Model
+updateScoring model =
+    case numMissilesLeft model of
+      0 -> scoreCities model
+      _ -> scoreMissile model
+
+scoreMissile model =
+  let
+    base = firstNonEmptyBase model
+    bases' = maybeRemoveMissile base model.bases
+    numMissiles = case base of
+                    Just _ -> 1
+                    Nothing -> 0
+    missilesScored' = model.missilesScored + numMissiles
+    score' = model.score + (numMissiles * 50)
+  in
+    { model
+      | score = score'
+      , missilesScored = missilesScored'
+      , bases = bases'
+    }
+
+numMissilesLeft : Model -> Int
+numMissilesLeft model =
+  List.map (\b -> b.numMissiles) model.bases |> List.sum
+
+scoreCities : Model -> Model
+scoreCities model =
+  case List.head model.cities of
+    Just city -> scoreCity city model
+    Nothing -> toState LevelIntro model
+
+scoreCity : City -> Model -> Model
+scoreCity city model =
+  let
+    citiesScored' = city :: model.citiesScored
+    cities' = List.drop 1 model.cities
+    score' = model.score + 500
+  in
+    { model
+      | citiesScored = citiesScored'
+      , cities = cities'
+      , score = score'
+    }
 
 keyPress key model =
   case key of
@@ -182,6 +242,9 @@ nextLevel model =
       , nukes = []
       , explosions = []
       , state = Playing
+      , cities = List.reverse model.citiesScored
+      , citiesScored = []
+      , missilesScored = 0
     }
 
 nukesForLevel level =
@@ -223,13 +286,13 @@ launchNukeFrom launch target model =
       , nukesLeft = nukesLeft'
     }
 
-gameOver : Model -> Bool
-gameOver model =
+isGameOver : Model -> Bool
+isGameOver model =
   List.length model.cities == 0 &&
   List.length model.explosions == 0
 
-levelOver : Model -> Bool
-levelOver model =
+isLevelOver : Model -> Bool
+isLevelOver model =
   List.length model.nukes == 0 &&
   List.length model.explosions == 0 &&
   model.nukesLeft == 0
@@ -252,13 +315,25 @@ nextCommand model =
 
 nextStep : Model -> Model
 nextStep model =
-  if gameOver model then
-    toState GameOver model
+  if isGameOver model then
+    gameOver model
   else
-    if levelOver model then
-      toState LevelIntro model
+    if isLevelOver model then
+      endLevel model
     else
       stepModel model
+
+gameOver model =
+  { model
+    | nukes = []
+    , missiles = []
+    , state = GameOver
+  }
+
+endLevel model =
+  { model
+    | state = LevelEnd
+  }
 
 stepModel : Model -> Model
 stepModel model =
@@ -459,11 +534,18 @@ makePoint x y =
   , y = toFloat y
   }
 
+nonEmptyBases : Model -> List Base
+nonEmptyBases model =
+  List.filter (\s -> s.numMissiles > 0) model.bases
+
+firstNonEmptyBase : Model -> Maybe Base
+firstNonEmptyBase model =
+  List.head (nonEmptyBases model)
+
 nearestBase : Vec2 -> Model -> Maybe Base
 nearestBase point model =
   let
-    nonEmptyBases = List.filter (\s -> s.numMissiles > 0) model.bases
-    bases = List.sortBy (distanceTo point) nonEmptyBases
+    bases = List.sortBy (distanceTo point) (nonEmptyBases model)
   in
     List.head bases
 
