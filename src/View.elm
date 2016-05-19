@@ -274,17 +274,49 @@ viewEndLevel model =
 
 viewScoredCities : Model -> List (Svg Msg)
 viewScoredCities model =
-  List.indexedMap scoreCity model.citiesScored
+  if List.length model.citiesScored > 0 then
+    (cityBonusScore model) ::
+    List.indexedMap scoreCity model.citiesScored
+  else
+    []
+
+cityBonusScore model =
+  let
+    score = (List.length model.citiesScored) * 500
+  in
+    Svg.text'
+         [ x "250"
+         , y "200"
+         , textAnchor "middle"
+         , fill "yellow"
+         ]
+         [ Svg.text (toString score) ]
 
 viewScoredMissiles : Model -> List (Svg Msg)
 viewScoredMissiles model =
-  List.indexedMap scoreMissile (List.repeat model.missilesScored 1)
+  if model.missilesScored > 0 then
+    (missileBonusScore model) ::
+    List.indexedMap scoreMissile (List.repeat model.missilesScored 1)
+  else
+    []
+
+missileBonusScore model =
+  let
+    score = model.missilesScored * 50
+  in
+    Svg.text'
+         [ x "250"
+         , y "150"
+         , textAnchor "middle"
+         , fill "yellow"
+         ]
+         [ Svg.text (toString score) ]
 
 scoreMissile : Int -> Int -> Svg Msg
 scoreMissile pos _ =
   let
-    x = 300 + (pos * 10)
-    y = 100
+    x = 280 + (pos * 10)
+    y = 140
   in
     renderMissile (x, y)
 
