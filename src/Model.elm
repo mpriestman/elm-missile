@@ -9,6 +9,8 @@ module Model exposing
   , init
   , update
   , subscriptions
+  , scoreForCity
+  , scoreForMissile
   )
 
 import AnimationFrame
@@ -33,17 +35,18 @@ type MissileType
   | Enemy
 
 type GameState
-  = Intro
-  | LevelIntro
+  = StartScreen
   | Playing
+  | BonusPoints
   | LevelEnd
   | GameOver
 
 subscriptions model =
   case model.state of
     Playing -> AnimationFrame.diffs Frame
-    LevelIntro -> Keyboard.presses KeyPress
-    LevelEnd -> Time.every (scoringInterval model) Tick
+    StartScreen -> Keyboard.presses KeyPress
+    LevelEnd -> Keyboard.presses KeyPress
+    BonusPoints -> Time.every (scoringInterval model) Tick
     _ -> Sub.none
 
 scoringInterval model =
@@ -150,7 +153,7 @@ defaultModel =
   , nukesLeft = 10
   , countdown = 0
   , level = 0
-  , state = LevelIntro
+  , state = StartScreen
   , score = 0
   , citiesScored = List.reverse defaultCities
   , missilesScored = 0
@@ -164,7 +167,7 @@ update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     Tick _ ->
-      (updateScoring model, Cmd.none)
+      (updateBonus model, Cmd.none)
     Frame _ ->
       updateModel model
     AddMissile (x, y) ->
@@ -178,11 +181,17 @@ update msg model =
     KeyPress key ->
       (keyPress key model, Cmd.none)
 
-updateScoring : Model -> Model
-updateScoring model =
+updateBonus : Model -> Model
+updateBonus model =
     case numMissilesLeft model of
       0 -> scoreCities model
       _ -> scoreMissile model
+
+scoreForMissile =
+  5
+
+scoreForCity =
+  100
 
 scoreMissile model =
   let
@@ -192,7 +201,7 @@ scoreMissile model =
                     Just _ -> 1
                     Nothing -> 0
     missilesScored' = model.missilesScored + numMissiles
-    score' = model.score + (numMissiles * 50)
+    score' = model.score + (numMissiles * scoreForMissile)
   in
     { model
       | score = score'
@@ -208,14 +217,14 @@ scoreCities : Model -> Model
 scoreCities model =
   case List.head model.cities of
     Just city -> scoreCity city model
-    Nothing -> toState LevelIntro model
+    Nothing -> toState LevelEnd model
 
 scoreCity : City -> Model -> Model
 scoreCity city model =
   let
     citiesScored' = city :: model.citiesScored
     cities' = List.drop 1 model.cities
-    score' = model.score + 500
+    score' = model.score + scoreForCity
   in
     { model
       | citiesScored = citiesScored'
@@ -332,7 +341,7 @@ gameOver model =
 
 endLevel model =
   { model
-    | state = LevelEnd
+    | state = BonusPoints
   }
 
 stepModel : Model -> Model

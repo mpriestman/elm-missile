@@ -16,9 +16,11 @@ view model =
     [ class "main" ]
     [ viewGame model ]
 
+groundPoints : String
 groundPoints =
   "0,400 0,350 10,350 30,330 50,330 70,350 370,350 390,330 410,330 430,350 730,350 750,330 770,330 790,350 800,350 800,400"
 
+missilePoints : List (Float, Float)
 missilePoints =
   [ (-1, 0)
   , (-1, 6)
@@ -34,6 +36,7 @@ missilePoints =
   , (1, 0)
   ]
 
+missileStorageLocations : List (Float, Float)
 missileStorageLocations =
   [ (0, 0)
   , (-8, 8)
@@ -47,28 +50,57 @@ missileStorageLocations =
   , (24, 24)
   ]
 
-cityPoints =
-  [ (-20, 0)
-  , (-20, -10)
-  , (-18, -10)
-  , (-18, -3)
-  , (-15, -3)
-  , (-15, -15)
-  , (-10, -15)
-  , (-10, -3)
-  , (20, -3)
-  , (20, 0)
+cityHeights : List (Float, Float)
+cityHeights =
+  [ (-28, -4)
+  , (-24, -4)
+  , (-24, -12)
+  , (-20, -12)
+  , (-20, -8)
+  , (-16, -8)
+  , (-16, -4)
+  , (-12, -4)
+  , (-12, -12)
+  , (-8, -12)
+  , (-8, -8)
+  , (-4, -8)
+  , (-4, -12)
+  , (0, -12)
+  , (0, -20)
+  , (4, -20)
+  , (4, -16)
+  , (8, -16)
+  , (8, -8)
+  , (12, -8)
+  , (12, -4)
+  , (16, -4)
+  , (16, -12)
+  , (20, -12)
+  , (20, -8)
+  , (24, -8)
+  , (24, -4)
+  , (28, -4)
+  , (28, 0)
+  , (-28, 0)
   ]
 
+cityPoints : List (Float, Float)
+cityPoints =
+  cityHeights
+
+missileAtPosition : Float -> Float -> String
 missileAtPosition x1 y1 =
   pointListAtPosition x1 y1 missilePoints
 
+cityAtPosition : Float -> Float -> String
 cityAtPosition x1 y1 =
   pointListAtPosition x1 y1 cityPoints
 
+translatePoints : Float -> Float -> List (Float, Float) -> List (Float, Float)
 translatePoints x1 y1 points =
   List.map (\(x, y) -> (x + x1, y + y1)) points
 
+pointListAtPosition : Float -> Float -> List (Float, Float) -> String
 pointListAtPosition x1 y1 points =
   let
     points' = translatePoints x1 y1 points
@@ -216,8 +248,8 @@ viewExplosion exp =
 viewState : Model -> List (Svg Msg)
 viewState model =
   case model.state of
-    Model.Intro -> viewIntro
-    Model.LevelIntro -> viewStartLevel model
+    Model.StartScreen -> viewStartScreen model
+    Model.BonusPoints -> viewBonusPoints model
     Model.LevelEnd -> viewEndLevel model
     Model.GameOver -> viewGameOver model
     _ -> []
@@ -244,12 +276,28 @@ beginButton =
            ]
            []
 
-viewStartLevel : Model -> List (Svg Msg)
-viewStartLevel model =
-  [ levelCaption model ]
+viewStartScreen : Model -> List (Svg Msg)
+viewStartScreen _ =
+  [ gameTitle, startMessage ]
 
-levelCaption model =
-  centeredText "PRESS ENTER TO START"
+gameTitle =
+  Svg.text'
+       [ x "400"
+       , y "150"
+       , textAnchor "middle"
+       , fontSize "30"
+       , fill "blue"
+       ]
+       [ Svg.text "MISSILE COMMAND" ]
+
+startMessage =
+  Svg.text'
+       [ x "400"
+       , y "250"
+       , textAnchor "middle"
+       , fill "blue"
+       ]
+       [ Svg.text "PRESS ENTER TO START" ]
 
 viewScore : Model -> List (Svg Msg)
 viewScore model =
@@ -265,12 +313,40 @@ renderScore model =
        ]
        [ Svg.text (toString model.score) ]
 
-viewEndLevel : Model -> List (Svg Msg)
-viewEndLevel model =
-  List.concat [ viewScoredCities model
+viewBonusPoints : Model -> List (Svg Msg)
+viewBonusPoints model =
+  List.concat [ viewBonusMessage
+              , viewScoredCities model
               , viewScoredMissiles model
               ]
 
+viewEndLevel : Model -> List (Svg Msg)
+viewEndLevel model =
+  List.concat [ viewBonusPoints model
+              , viewContinueMessage
+              ]
+
+viewContinueMessage : List (Svg Msg)
+viewContinueMessage =
+  [ Svg.text'
+         [ x "400"
+         , y "256"
+         , textAnchor "middle"
+         , fill "blue"
+         ]
+      [ Svg.text "PRESS ENTER TO CONTINUE" ]
+  ]
+
+viewBonusMessage : List (Svg Msg)
+viewBonusMessage =
+  [ Svg.text'
+         [ x "400"
+         , y "100"
+         , textAnchor "middle"
+         , fill "blue"
+         ]
+      [ Svg.text "BONUS POINTS" ]
+  ]
 
 viewScoredCities : Model -> List (Svg Msg)
 viewScoredCities model =
@@ -282,7 +358,7 @@ viewScoredCities model =
 
 cityBonusScore model =
   let
-    score = (List.length model.citiesScored) * 500
+    score = (List.length model.citiesScored) * Model.scoreForCity
   in
     Svg.text'
          [ x "250"
@@ -302,7 +378,7 @@ viewScoredMissiles model =
 
 missileBonusScore model =
   let
-    score = model.missilesScored * 50
+    score = model.missilesScored * Model.scoreForMissile
   in
     Svg.text'
          [ x "250"
@@ -315,7 +391,7 @@ missileBonusScore model =
 scoreMissile : Int -> Int -> Svg Msg
 scoreMissile pos _ =
   let
-    x = 280 + (pos * 10)
+    x = 290 + (pos * 10)
     y = 140
   in
     renderMissile (x, y)
@@ -323,7 +399,7 @@ scoreMissile pos _ =
 scoreCity : Int -> City -> Svg Msg
 scoreCity pos city =
   let
-    x = 300 + (pos * 50)
+    x = 310 + (pos * 60)
     y = 200
   in
     renderCity x y
