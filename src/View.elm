@@ -50,8 +50,8 @@ missileStorageLocations =
   , (24, 24)
   ]
 
-cityHeights : List (Float, Float)
-cityHeights =
+cityPoints : List (Float, Float)
+cityPoints =
   [ (-28, -4)
   , (-24, -4)
   , (-24, -12)
@@ -83,10 +83,6 @@ cityHeights =
   , (28, 0)
   , (-28, 0)
   ]
-
-cityPoints : List (Float, Float)
-cityPoints =
-  cityHeights
 
 missileAtPosition : Float -> Float -> String
 missileAtPosition x1 y1 =
