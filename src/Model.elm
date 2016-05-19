@@ -161,7 +161,7 @@ defaultModel =
 
 init : (Model, Cmd Msg)
 init =
-  (defaultModel, Random.generate NextCountdown (Random.int 10 100))
+  (defaultModel, countdownCommand)
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =

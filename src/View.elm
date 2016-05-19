@@ -120,7 +120,7 @@ viewGame model =
     svgElements =
       List.concat
             [ [svgBackground, viewGround ]
-            , List.map renderBase model.bases
+            , List.map (renderBase model) model.bases
             , List.map viewCity model.cities
             , List.map viewMissile model.missiles
             , List.map viewMissile model.nukes
@@ -193,29 +193,20 @@ renderMissile (x, y) =
          ]
          []
 
-renderBase : Base -> Svg Msg
-renderBase base =
+renderBase : Model -> Base -> Svg Msg
+renderBase model base =
   let
     locations = List.take base.numMissiles missileStorageLocations |> translatePoints base.position.x base.position.y
-    caption = baseCaption base
+    caption = baseCaption model base
   in
     Svg.g
          []
          ((List.map (renderMissile) locations) ++ caption)
 
-baseCaptionText base =
-  if base.numMissiles == 0 then
-    Just "OUT"
-  else
-    if base.numMissiles <= 3 then
-      Just "LOW"
-    else
-      Nothing
-
-baseCaption : Base -> List (Svg Msg)
-baseCaption base =
+baseCaption : Model -> Base -> List (Svg Msg)
+baseCaption model base =
   let
-    text = baseCaptionText base
+    text = baseCaptionText model base
   in
     case text of
       Just t ->
@@ -229,6 +220,19 @@ baseCaption base =
         ]
       Nothing ->
         []
+
+baseCaptionText : Model -> Base -> Maybe String
+baseCaptionText model base =
+  if model.state == Model.Playing then
+    if base.numMissiles == 0 then
+      Just "OUT"
+    else
+      if base.numMissiles <= 3 then
+        Just "LOW"
+      else
+        Nothing
+  else
+    Nothing
 
 viewExplosion : Explosion -> Svg Msg
 viewExplosion exp =
