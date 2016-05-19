@@ -111,8 +111,8 @@ viewGame model =
         [ class "game-background"
         , x "0px"
         , y "0px"
-        , width "800"
-        , height "400"
+        , width "100%"
+        , height "100%"
         , fill "black"
         , on "click" (Json.map Model.AddMissile getClickPos)
         ]
